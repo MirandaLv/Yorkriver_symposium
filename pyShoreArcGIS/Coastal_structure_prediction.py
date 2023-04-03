@@ -106,16 +106,16 @@ def mosaic_list(imglist, outpath):
         m.write(mosaic)
 
 #############################################################
-# Input parameters
-proj_path = arcpy.GetParameterAsText(0)
-data_dir = arcpy.GetParameterAsText(1)
-geo_data = arcpy.GetParameterAsText(2)
-buffer_unit = int(arcpy.GetParameterAsText(3))
+# # Input parameters
+# proj_path = arcpy.GetParameterAsText(0)
+# data_dir = arcpy.GetParameterAsText(1)
+# geo_data = arcpy.GetParameterAsText(2)
+# buffer_unit = int(arcpy.GetParameterAsText(3))
 
-# proj_path = r"C:\\Users\mlv\Documents\GitHub\pyShore"
-# data_dir = r"C:\\Users\mlv\Documents\GitHub\pyShore\data"
-# geo_data = r"C:\\Users\mlv\Documents\GitHub\pyShore\data\VA_CUSP_selected_wgs84.shp"
-# buffer_unit = int(1)
+proj_path = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium"
+data_dir = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\test_tiles"
+geo_data = r"C:\\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\CUSP_manmade.shp"
+buffer_unit = int(1)
 
 Path(os.path.join(proj_path, 'outputs')).mkdir(exist_ok=True, parents=True)
 #############################################################
@@ -245,11 +245,18 @@ with torch.no_grad():
             dst.write_band(1, conf)
 
 #############################################################
-# Create a mosaic confidence layer
-output_path = os.path.join(proj_path, 'outputs', 'mosaic_conf.tif')
+# Create a mosaic confidence layer/layers
+if len(all_tiles) == 1:
+    output_path = os.path.join(proj_path, 'outputs', 'mosaic_conf.tif')
+    allconfs = [os.path.join(predict_temp, f) for f in os.listdir(predict_temp) if f.endswith('conf.tif')]
+    mosaic_list(allconfs, output_path)
+else:
+    all_tiles_names = [os.path.basename(f).split('.')[0] for f in all_tiles]
+    for tile_name in all_tiles_names:
+        output_path = os.path.join(proj_path, 'outputs', tile_name+'_mosaic_conf.tif')
+        allconfs = [os.path.join(predict_temp, f) for f in os.listdir(predict_temp) if f.endswith('conf.tif') and tile_name in f]
+        mosaic_list(allconfs, output_path)
 
-allconfs = [os.path.join(predict_temp, f) for f in os.listdir(predict_temp) if f.endswith('conf.tif')]
-mosaic_list(allconfs, output_path)
 #############################################################
 
 #############################################################
