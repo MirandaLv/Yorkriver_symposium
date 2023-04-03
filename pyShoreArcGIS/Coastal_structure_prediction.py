@@ -113,9 +113,9 @@ def mosaic_list(imglist, outpath):
 # buffer_unit = int(arcpy.GetParameterAsText(3))
 
 proj_path = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium"
-data_dir = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\test_tiles"
+data_dir = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\image_tiles"
 geo_data = r"C:\\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\CUSP_manmade.shp"
-buffer_unit = int(1)
+buffer_unit = int(3)
 
 Path(os.path.join(proj_path, 'outputs')).mkdir(exist_ok=True, parents=True)
 #############################################################
@@ -246,14 +246,17 @@ with torch.no_grad():
 
 #############################################################
 # Create a mosaic confidence layer/layers
+output_paths = []
 if len(all_tiles) == 1:
     output_path = os.path.join(proj_path, 'outputs', 'mosaic_conf.tif')
+    output_paths.append(output_path)
     allconfs = [os.path.join(predict_temp, f) for f in os.listdir(predict_temp) if f.endswith('conf.tif')]
     mosaic_list(allconfs, output_path)
 else:
     all_tiles_names = [os.path.basename(f).split('.')[0] for f in all_tiles]
     for tile_name in all_tiles_names:
         output_path = os.path.join(proj_path, 'outputs', tile_name+'_mosaic_conf.tif')
+        output_paths.append(output_path)
         allconfs = [os.path.join(predict_temp, f) for f in os.listdir(predict_temp) if f.endswith('conf.tif') and tile_name in f]
         mosaic_list(allconfs, output_path)
 
@@ -261,7 +264,7 @@ else:
 
 #############################################################
 # Step 3. Post processing
-# This script is used to burn the coastal line features into the shortline structure detection result
+# This script is used to burn the coastal line features into the shoreline structure detection result
 # to improve the overall accuracy
 # output directory
 shoreline_masks = os.path.join(proj_path, 'outputs', 'predict_class')
@@ -270,69 +273,77 @@ predicted_shp = os.path.join(proj_path, 'outputs', 'test_output.shp')
 #############################################################
 
 gdf = gpd.read_file(geo_data)
-model_masks_paths = [os.path.join(predict_temp, file) for file in os.listdir(predict_temp) if file.endswith("unet.tif")]
+dataframelist = []
 
+for tile_name in all_tiles_names:
 
-for tile_path in model_masks_paths:
+    model_masks_paths = [os.path.join(predict_temp, file) for file in os.listdir(predict_temp) if file.endswith("unet.tif") and tile_name in file]
+    predict_masks_paths = []
 
-    print("------------------------------------------------------")
+    for tile_path in model_masks_paths:
 
-    print("Processing tile {}: ".format(tile_path))
+        print("------------------------------------------------------")
+        print("Processing tile {}: ".format(tile_path))
 
-    # select vectors that are within the tile
-    tif_geom = get_tile_geom(tile_path)
+        # select vectors that are within the tile
+        tif_geom = get_tile_geom(tile_path)
 
-    # get the geometry of intersected shapes
-    sub_gdf = gdf[gdf.intersects(tif_geom)]
+        # get the geometry of intersected shapes
+        sub_gdf = gdf[gdf.intersects(tif_geom)]
 
-    # Check the vectors that overlayed with the selected tile
-    if not sub_gdf.empty:
+        # Check the vectors that overlayed with the selected tile
+        if not sub_gdf.empty:
 
-        sub_gdf = sub_gdf.to_crs(crs=26918)
-        sub_gdf['geometry'] = sub_gdf['geometry'].buffer(buffer_unit)
-        sub_gdf = sub_gdf.to_crs(crs=4326)
-        shape_polys = sub_gdf["geometry"].to_list()
+            sub_gdf = sub_gdf.to_crs(crs=26918)
+            sub_gdf['geometry'] = sub_gdf['geometry'].buffer(buffer_unit)
+            # sub_gdf = sub_gdf.to_crs(crs=4326)
+            shape_polys = sub_gdf["geometry"].to_list()
 
-        output_filename = os.path.basename(tile_path).split('.')[0] + '_shoreline_mask.tif'
+            output_filename = os.path.basename(tile_path).split('.')[0] + '_shoreline_mask.tif'
 
-        with rasterio.open(tile_path) as src:
-            meta = src.meta.copy()
-            meta['count'] = 1
+            with rasterio.open(tile_path) as src:
+                meta = src.meta.copy()
+                meta['count'] = 1
 
-            mask_array = src.read(1) # mask_array is the predicted multiclass array
+                mask_array = src.read(1) # mask_array is the predicted multiclass array
 
-            image = features.rasterize(
-                ((shape_poly, 1) for shape_poly in shape_polys),
-                out_shape=src.shape,
-                transform=src.transform)
+                image = features.rasterize(
+                    ((shape_poly, 1) for shape_poly in shape_polys),
+                    out_shape=src.shape,
+                    transform=src.transform)
 
-            filtered_mask = mask_array * image # The image is an array of 0/1 indicating the mask
+                filtered_mask = mask_array * image # The image is an array of 0/1 indicating the mask
 
-            with rasterio.open(os.path.join(shoreline_masks, output_filename), 'w', **meta) as dst:
-                dst.write(filtered_mask, indexes=1)
+                with rasterio.open(os.path.join(shoreline_masks, output_filename), 'w', **meta) as dst:
+                    dst.write(filtered_mask, indexes=1)
+                predict_masks_paths.append(os.path.join(shoreline_masks, output_filename))
 
+                #
+                # # merge the raster files into one
+                # predict_masks_paths = [os.path.join(shoreline_masks, file) for file in os.listdir(shoreline_masks) if file.split(".")[-1]=="tif"]
+                #
+                print(predict_masks_paths)
 
-# merge the raster files into one
-predict_masks_paths = [os.path.join(shoreline_masks, file) for file in os.listdir(shoreline_masks) if file.split(".")[-1]=="tif"]
-
-dataframelist = list()
-for file in predict_masks_paths:
-    dataframelist.append(vectorize_tiff(file))
+                for file in predict_masks_paths:
+                    dataframelist.append(vectorize_tiff(file))
 
 rdf = gpd.GeoDataFrame(pd.concat(dataframelist, ignore_index=True))
 rdf['class_name'] = rdf['class_value'].apply(lambda x: add_class4_name(x))
 rdf['geometry'] = rdf["geometry"].apply(lambda x: shape(x))
-rdf.set_crs('epsg:4326')
+# rdf.set_crs('epsg:4326')
 rdf.to_file(predicted_shp)
 
 # #############################################################
 # Step 4. Zonal Statistics
-stats = zonal_stats(predicted_shp, output_path, stats=['min', 'max', 'median', 'sum', 'count', 'mean'])
-stats_df = pd.DataFrame(stats)
+allstats = []
+for output_path in output_paths:
+    stats = zonal_stats(predicted_shp, output_path, stats=['min', 'max', 'median', 'sum', 'count', 'mean'])
+    allstats.extend(stats)
+stats_df = pd.DataFrame(allstats)
 poly_df = gpd.read_file(predicted_shp)
 pd = poly_df.join(stats_df)
-
 pd.to_file(os.path.join(proj_path, 'outputs', 'vector_results.shp'))
+
 
 # #############################################################
 # Delete the temporary shapefiles and temporary folders
