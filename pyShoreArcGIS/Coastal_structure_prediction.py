@@ -113,7 +113,7 @@ def mosaic_list(imglist, outpath):
 # buffer_unit = int(arcpy.GetParameterAsText(3))
 
 proj_path = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium"
-data_dir = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\image_tiles"
+data_dir = r"C:\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\test_tiles"
 geo_data = r"C:\\Users\mlv\Documents\GitHub\Yorkriver_symposium\datasets\CUSP_manmade.shp"
 buffer_unit = int(3)
 
@@ -131,7 +131,7 @@ gdf = gpd.read_file(geo_data)
 
 all_tiles = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('tif')]
 
-cut = True
+cut = False
 while cut:
     cut = False
     for tile in all_tiles:
@@ -338,6 +338,7 @@ rdf.to_file(predicted_shp)
 allstats = []
 for output_path in output_paths:
     stats = zonal_stats(predicted_shp, output_path, stats=['min', 'max', 'median', 'sum', 'count', 'mean'])
+    print(stats)
     allstats.extend(stats)
 stats_df = pd.DataFrame(allstats)
 poly_df = gpd.read_file(predicted_shp)
